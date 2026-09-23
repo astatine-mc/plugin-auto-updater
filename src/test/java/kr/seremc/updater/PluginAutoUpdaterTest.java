@@ -6,10 +6,11 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
@@ -85,5 +86,22 @@ public class PluginAutoUpdaterTest {
     assertTrue(body.contains("\"version\""), "Metadata must contain version field");
     assertTrue(body.contains("\"downloads\""), "Metadata must contain downloads field");
     assertTrue(body.contains("https://download.luckperms.net/"), "Downloads must use download.luckperms.net");
+  }
+
+  @Test
+  void testFindActiveJar() {
+    Path lobbyPlugins = Paths.get("/home/ubuntu/projectA/lobby/plugins");
+    if (java.nio.file.Files.isDirectory(lobbyPlugins)) {
+      Optional<Path> found = PluginAutoUpdater.findActiveJar(lobbyPlugins, "luckperms", "official");
+      assertTrue(found.isPresent(), "Should find existing LuckPerms jar in lobby/plugins");
+      assertEquals("LuckPerms-Bukkit-5.5.84.jar", found.get().getFileName().toString());
+    }
+
+    Path proxyPlugins = Paths.get("/home/ubuntu/projectA/Proxy/plugins");
+    if (java.nio.file.Files.isDirectory(proxyPlugins)) {
+      Optional<Path> foundTab = PluginAutoUpdater.findActiveJar(proxyPlugins, "tab", "tab");
+      assertTrue(foundTab.isPresent(), "Should find TAB jar in Proxy/plugins");
+      assertEquals("TAB v6.1.3.jar", foundTab.get().getFileName().toString());
+    }
   }
 }

@@ -46,8 +46,8 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 /**
  * Downloads only explicitly registered third-party plugins into an inactive update directory.
- * It never deletes or overwrites an active plugin file; the server start script applies
- * verified pending files after the JVM has stopped.
+ * It overwrites the existing file name prior to the update so file names remain consistent.
+ * The server start script applies verified pending files after the JVM has stopped.
  */
 @Plugin(id = "pluginautoupdater", name = "PluginAutoUpdater", version = "1.0.0", authors = {"Seremc"})
 public final class PluginAutoUpdater {
@@ -222,15 +222,36 @@ public final class PluginAutoUpdater {
   }
 
   /**
-   * 검증된 JAR을 update/ 비활성 폴더에만 저장합니다.
-   * 서버 재시작 시 start.sh의 apply-pending-updates.sh가 검증 후 백업 및 교체를 진행합니다.
+   * 검증된 JAR을 update/ 비활성 폴더에 저장합니다.
+   * 이때 새 원격 파일명이 아닌 '업데이트 이전의 활성 파일명'을 유지하여 덮어씌우는 방식으로 스테이징합니다.
    */
   private void stageDownload(Entry entry, String remoteVersion, String url, String expectedHash, CommandSource feedback) throws Exception {
     Path serverDir = serverDirectory(entry.platform());
-    Path active = serverDir.resolve("plugins").resolve(entry.targetFile());
+    Path pluginsDir = serverDir.resolve("plugins");
 
-    if (Files.notExists(active)) {
-      String msg = String.format("[%s] 활성 JAR 파일이 plugins/ 폴더에 존재하지 않아 건너뜁니다: %s", entry.id(), active);
+    // 1. 업데이트 이전의 활성 파일명 결정 (설정된 target-file 또는 plugins/ 내 기존 파일 자동 탐색)
+    String targetFileName = entry.targetFile();
+    Path active = null;
+
+    if (!targetFileName.isBlank()) {
+      Path candidate = pluginsDir.resolve(targetFileName);
+      if (Files.isRegularFile(candidate)) {
+        active = candidate;
+      }
+    }
+
+    if (active == null) {
+      Optional<Path> found = findActiveJar(pluginsDir, entry.id(), entry.project());
+      if (found.isPresent()) {
+        active = found.get();
+        targetFileName = active.getFileName().toString();
+        logger.info("[{}] 업데이트 이전의 기존 파일명을 감지했습니다: {}", entry.id(), targetFileName);
+      }
+    }
+
+    if (active == null || !Files.isRegularFile(active)) {
+      String msg = String.format("[%s] 덮어씌울 업데이트 이전 JAR 파일이 plugins/ 폴더에 존재하지 않아 건너뜁니다: %s",
+          entry.id(), targetFileName.isBlank() ? "(기존 파일 감지 실패)" : targetFileName);
       logger.warn(msg);
       if (feedback != null) feedback.sendPlainMessage(msg);
       return;
@@ -246,7 +267,7 @@ public final class PluginAutoUpdater {
     }
 
     Path updateDirectory = serverDir.resolve("update");
-    Path stagedFile = updateDirectory.resolve(entry.targetFile());
+    Path stagedFile = updateDirectory.resolve(targetFileName);
     Path pendingTsv = updateDirectory.resolve("pending.tsv");
     if (remoteVersion.equals(readStagedVersion(entry.id())) && Files.isRegularFile(stagedFile) && Files.isRegularFile(pendingTsv)) {
       logger.debug("{}: 최신 버전({})이 이미 update/ 폴더에 대기 중입니다.", entry.id(), remoteVersion);
@@ -274,16 +295,72 @@ public final class PluginAutoUpdater {
 
       validateJar(temporary, entry.platform());
       moveAtomically(temporary, stagedFile);
-      writePending(entry, remoteVersion, actualHash);
+      writePending(entry.platform(), entry.id(), targetFileName, remoteVersion, actualHash);
       writeStagedVersion(entry.id(), remoteVersion);
 
-      String successMsg = String.format("[%s] %s -> %s 업데이트를 update/ 폴더에 준비했습니다. 다음 서버 재시작 시 적용됩니다.",
-          entry.id(), localVersion.isBlank() ? "현재" : localVersion, remoteVersion);
+      String successMsg = String.format("[%s] 최신 버전(%s)을 이전 파일명(%s)으로 update/ 폴더에 준비했습니다. 다음 서버 재시작 시 덮어씌워집니다.",
+          entry.id(), remoteVersion, targetFileName);
       logger.info(successMsg);
       if (feedback != null) feedback.sendPlainMessage(successMsg);
     } finally {
       Files.deleteIfExists(temporary);
     }
+  }
+
+  /**
+   * plugins/ 디렉터리에서 해당 플러그인의 기존 활성 JAR 파일을 탐색합니다.
+   * 1. JAR 내부 plugin.yml(name) 또는 velocity-plugin.json(id/name) 메타데이터 일치 확인
+   * 2. 파일명 접두사 비교 (대소문자 및 특수문자 무시)
+   */
+  public static Optional<Path> findActiveJar(Path pluginsDir, String id, String project) {
+    if (!Files.isDirectory(pluginsDir)) return Optional.empty();
+    try (var stream = Files.list(pluginsDir)) {
+      List<Path> jars = stream.filter(p -> Files.isRegularFile(p) && p.getFileName().toString().endsWith(".jar")).toList();
+
+      for (Path jar : jars) {
+        String metaName = pluginMetaName(jar).orElse("");
+        if (!metaName.isBlank() && (metaName.equalsIgnoreCase(id) || (!project.isBlank() && metaName.equalsIgnoreCase(project)))) {
+          return Optional.of(jar);
+        }
+      }
+
+      String cleanId = id.replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.ROOT);
+      String cleanProject = project.replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.ROOT);
+      for (Path jar : jars) {
+        String cleanFname = jar.getFileName().toString().replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.ROOT);
+        if (cleanFname.startsWith(cleanId) || (!cleanProject.isBlank() && cleanFname.startsWith(cleanProject))) {
+          return Optional.of(jar);
+        }
+      }
+    } catch (IOException ignored) {}
+    return Optional.empty();
+  }
+
+  private static Optional<String> pluginMetaName(Path jar) {
+    if (!Files.isRegularFile(jar)) return Optional.empty();
+    try (ZipFile archive = new ZipFile(jar.toFile())) {
+      var paper = archive.getEntry("plugin.yml");
+      if (paper != null) {
+        try (InputStream input = archive.getInputStream(paper)) {
+          for (String line : new String(input.readAllBytes(), StandardCharsets.UTF_8).split("\\R")) {
+            if (line.trim().startsWith("name:")) {
+              return Optional.of(line.substring(line.indexOf(':') + 1).trim().replace("\"", "").replace("'", ""));
+            }
+          }
+        }
+      }
+      var velocity = archive.getEntry("velocity-plugin.json");
+      if (velocity != null) {
+        try (InputStream input = archive.getInputStream(velocity)) {
+          Object parsed = Json.parse(new String(input.readAllBytes(), StandardCharsets.UTF_8));
+          Map<String, Object> map = castObject(parsed);
+          String id = string(map.get("id"));
+          if (!id.isBlank()) return Optional.of(id);
+          return Optional.ofNullable(string(map.get("name")));
+        }
+      }
+    } catch (Exception ignored) {}
+    return Optional.empty();
   }
 
   private Path serverDirectory(String platform) throws IOException {
@@ -312,8 +389,8 @@ public final class PluginAutoUpdater {
     throw new IOException("Modrinth 버전에 플러그인 JAR이 없습니다.");
   }
 
-  private void writePending(Entry entry, String version, String hash) throws IOException {
-    Path pending = serverDirectory(entry.platform()).resolve("update").resolve("pending.tsv");
+  private void writePending(String platform, String id, String targetFile, String version, String hash) throws IOException {
+    Path pending = serverDirectory(platform).resolve("update").resolve("pending.tsv");
     Files.createDirectories(pending.getParent());
     Map<String, String> lines = new LinkedHashMap<>();
     if (Files.exists(pending)) {
@@ -322,7 +399,7 @@ public final class PluginAutoUpdater {
         if (values.length == 2) lines.put(values[0], line);
       }
     }
-    lines.put(entry.id(), entry.id() + "\t" + entry.targetFile() + "\t" + hash + "\t" + version);
+    lines.put(id, id + "\t" + targetFile + "\t" + hash + "\t" + version);
     Path temp = Files.createTempFile(pending.getParent(), ".pending-", ".tmp");
     Files.write(temp, lines.values(), StandardCharsets.UTF_8);
     moveAtomically(temp, pending);
@@ -444,7 +521,7 @@ public final class PluginAutoUpdater {
         map.get("targetFile"),
         map.get("file")
     ));
-    if (!targetFile.matches("[A-Za-z0-9._+ -]+\\.jar")) {
+    if (!targetFile.isBlank() && !targetFile.matches("[A-Za-z0-9._+ -]+\\.jar")) {
       logger.warn("{}: target-file '{}' 은(는) 경로 없는 .jar 파일명이어야 합니다.", id, targetFile);
       return;
     }
@@ -632,17 +709,18 @@ public final class PluginAutoUpdater {
         # [주의] 이 서버에서 직접 빌드하는 커스텀 플러그인(custom-nickname 등)은 등록하지 마세요.
         plugins:
           # LuckPerms: 공식 전용 API(metadata.luckperms.net) 및 전용 다운로드 서버(download.luckperms.net)를 통해 업데이트합니다.
+          # target-file을 지정하지 않으면 plugins/ 폴더의 기존 파일(업데이트 이전 파일명)을 자동 감지하여 덮어씌웁니다.
           luckperms:
             enabled: true
             platform: paper                        # paper 또는 velocity
-            target-file: LuckPerms-Bukkit-5.5.84.jar # plugins/ 폴더에 위치한 현재 활성 JAR 파일명
+            target-file: LuckPerms-Bukkit-5.5.84.jar # plugins/ 폴더에 위치한 현재 활성 JAR 파일명 (생략 시 자동 감지)
             source: luckperms                      # luckperms 전용 다운로드 API 사용
 
           # Modrinth 플러그인 예시 (필요 시 주석 해제 후 사용)
           # viaversion:
           #   enabled: true
           #   platform: paper
-          #   target-file: ViaVersion.jar
+          #   target-file: ViaVersion.jar          # 생략 시 기존 ViaVersion*.jar 파일명으로 덮어씀
           #   source: modrinth
           #   project: viaversion
           #   channel: release                     # release, beta, alpha 중 선택 (기본값: release)
@@ -682,7 +760,7 @@ public final class PluginAutoUpdater {
         source.sendPlainMessage("등록된 플러그인 (" + entries.size() + "개):");
         for (Entry e : entries) {
           source.sendPlainMessage(String.format(" - %s [%s] target=%s source=%s enabled=%s",
-              e.id(), e.platform(), e.targetFile(), e.source(), e.enabled()));
+              e.id(), e.platform(), e.targetFile().isBlank() ? "(기존 파일명 자동 유지)" : e.targetFile(), e.source(), e.enabled()));
         }
         source.sendPlainMessage("명령어: /pluginupdater <check|reload|status>");
         return;
