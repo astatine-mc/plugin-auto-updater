@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -21,30 +22,38 @@ import static org.junit.jupiter.api.Assertions.*;
 public class PluginAutoUpdaterTest {
 
   @Test
-  void testYamlParsingWithGlobalMinecraftVersion() {
+  void testYamlParsingWithMultiServer() {
     String yamlContent = """
         minecraft-version: "1.21.1"
-        paper:
-          server-directory: "../lobby"
+        servers:
+          proxy:
+            directory: "."
+            platform: velocity
+          lobby:
+            directory: "../lobby"
+            platform: paper
+          survival:
+            directory: "../survival"
+            platform: paper
         plugins:
           luckperms:
             enabled: true
-            platform: paper
-            target-file: LuckPerms-Bukkit-5.5.84.jar
+            servers:
+              - lobby
+              - survival
             source: luckperms
           custom-modrinth:
             enabled: true
-            platform: paper
+            server: lobby
             target-file: CustomModrinth.jar
             source: modrinth
             project: custom-project
             minecraft-version: "1.20.4"
-          inherited-modrinth:
+          proxy-tab:
             enabled: true
-            platform: velocity
-            target-file: Inherited.jar
+            server: proxy
             source: modrinth
-            project: inherited-project
+            project: tab
         """;
 
     Yaml yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
@@ -53,20 +62,25 @@ public class PluginAutoUpdaterTest {
     assertNotNull(root);
     assertEquals("1.21.1", String.valueOf(root.get("minecraft-version")));
 
-    Map<?, ?> paper = (Map<?, ?>) root.get("paper");
-    assertEquals("../lobby", paper.get("server-directory"));
+    Map<?, ?> servers = (Map<?, ?>) root.get("servers");
+    assertEquals(3, servers.size());
+    assertTrue(servers.containsKey("proxy"));
+    assertTrue(servers.containsKey("lobby"));
+    assertTrue(servers.containsKey("survival"));
 
     Map<?, ?> plugins = (Map<?, ?>) root.get("plugins");
     assertEquals(3, plugins.size());
 
     Map<?, ?> lp = (Map<?, ?>) plugins.get("luckperms");
-    assertEquals("paper", lp.get("platform"));
-    assertEquals("LuckPerms-Bukkit-5.5.84.jar", lp.get("target-file"));
+    List<?> lpServers = (List<?>) lp.get("servers");
+    assertEquals(2, lpServers.size());
+    assertTrue(lpServers.contains("lobby"));
+    assertTrue(lpServers.contains("survival"));
     assertEquals("luckperms", lp.get("source"));
-    assertNull(lp.get("minecraft-version")); // should inherit global
 
     Map<?, ?> custom = (Map<?, ?>) plugins.get("custom-modrinth");
-    assertEquals("1.20.4", custom.get("minecraft-version")); // overridden
+    assertEquals("lobby", custom.get("server"));
+    assertEquals("1.20.4", custom.get("minecraft-version"));
   }
 
   @Test

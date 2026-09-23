@@ -7,34 +7,63 @@
 # 개별 플러그인 설정에서 minecraft-version을 생략하면 이 버전이 적용됩니다.
 minecraft-version: "1.21.1"
 
-# Paper(로비) 서버 디렉터리 경로 (Velocity 서버 루트 기준 상대 경로 또는 절대 경로)
-paper:
-  server-directory: "../lobby"
+# ==============================================================================
+# 관리 대상 서버(버킷) 목록 정의
+# Velocity 루트(Proxy/) 기준 상대 경로 또는 절대 경로를 지정합니다.
+# platform: paper(기본값) 또는 velocity
+# ==============================================================================
+servers:
+  proxy:
+    directory: "."
+    platform: velocity
 
+  lobby:
+    directory: "../lobby"
+    platform: paper
+
+  # 추후 여러 버킷 서버 추가 시 예시:
+  # survival:
+  #   directory: "../survival"
+  #   platform: paper
+  # dungeon:
+  #   directory: "../dungeon"
+  #   platform: paper
+
+# ==============================================================================
 # 자동 업데이트 대상 플러그인 목록
 # [주의] 이 작업 공간에서 직접 빌드하는 자체 플러그인(custom-nickname 등)은 등록하지 마세요.
+# ==============================================================================
 plugins:
-  # LuckPerms: 공식 전용 API(metadata.luckperms.net) 및 전용 다운로드 서버(download.luckperms.net)를 통해 업데이트합니다.
+  # [예시 1] 여러 버킷 서버에 공통 적용 (servers에 목록 지정 또는 all-paper)
+  # target-file 생략 시 각 서버의 plugins/ 폴더에 설치된 기존 파일명을 자동 감지하여 덮어씌웁니다.
   luckperms:
     enabled: true
-    platform: paper                        # paper 또는 velocity
-    target-file: LuckPerms-Bukkit-5.5.84.jar # plugins/ 폴더에 위치한 현재 활성 JAR 파일명
+    servers:
+      - lobby
+      # - survival
+      # - dungeon
     source: luckperms                      # luckperms 전용 다운로드 API 사용
 
-  # Modrinth 예시 (필요 시 주석 해제 후 사용)
+  # [예시 2] 특정 버킷 서버에만 적용 (server: lobby)
   # viaversion:
   #   enabled: true
-  #   platform: paper
-  #   target-file: ViaVersion.jar
+  #   server: lobby
   #   source: modrinth
   #   project: viaversion
   #   channel: release                     # release, beta, alpha 중 선택 (기본값: release)
-  #   # minecraft-version: "1.21.1"        # 생략 시 위의 글로벌 minecraft-version이 사용됩니다.
+  #   # minecraft-version: "1.21.1"        # 생략 시 위의 글로벌 minecraft-version 사용
 
-  # Spigot 버전 확인 예시 (Spigot 공식은 다운로드 API가 없어 알림 로그만 출력)
+  # [예시 3] 프록시 서버 전용 플러그인 (server: proxy)
+  # tab:
+  #   enabled: true
+  #   server: proxy
+  #   source: modrinth
+  #   project: tab
+  #   channel: release
+
+  # [예시 4] Spigot 버전 확인 예시 (Spigot 공식은 다운로드 API가 없어 알림 로그만 출력)
   # example-spigot:
   #   enabled: false
-  #   platform: paper
-  #   target-file: ExamplePlugin.jar
+  #   server: lobby
   #   source: spigot-check
   #   project: "12345"                     # SpigotMC 리소스 ID
