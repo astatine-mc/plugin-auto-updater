@@ -371,15 +371,22 @@ public final class PluginAutoUpdater {
     try (var stream = Files.list(pluginsDir)) {
       List<Path> jars = stream.filter(p -> Files.isRegularFile(p) && p.getFileName().toString().endsWith(".jar")).toList();
 
+      String cleanId = id.replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.ROOT);
+      String cleanProject = project.replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.ROOT);
+
       for (Path jar : jars) {
         String metaName = pluginMetaName(jar).orElse("");
-        if (!metaName.isBlank() && (metaName.equalsIgnoreCase(id) || (!project.isBlank() && metaName.equalsIgnoreCase(project)))) {
-          return Optional.of(jar);
+        if (!metaName.isBlank()) {
+          if (metaName.equalsIgnoreCase(id) || (!project.isBlank() && metaName.equalsIgnoreCase(project))) {
+            return Optional.of(jar);
+          }
+          String cleanMeta = metaName.replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.ROOT);
+          if (cleanMeta.equals(cleanId) || (!cleanProject.isBlank() && cleanMeta.equals(cleanProject))) {
+            return Optional.of(jar);
+          }
         }
       }
 
-      String cleanId = id.replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.ROOT);
-      String cleanProject = project.replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.ROOT);
       for (Path jar : jars) {
         String cleanFname = jar.getFileName().toString().replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.ROOT);
         if (cleanFname.startsWith(cleanId) || (!cleanProject.isBlank() && cleanFname.startsWith(cleanProject))) {
@@ -394,6 +401,7 @@ public final class PluginAutoUpdater {
     if (!Files.isRegularFile(jar)) return Optional.empty();
     try (ZipFile archive = new ZipFile(jar.toFile())) {
       var paper = archive.getEntry("plugin.yml");
+      if (paper == null) paper = archive.getEntry("paper-plugin.yml");
       if (paper != null) {
         try (InputStream input = archive.getInputStream(paper)) {
           for (String line : new String(input.readAllBytes(), StandardCharsets.UTF_8).split("\\R")) {
@@ -465,6 +473,7 @@ public final class PluginAutoUpdater {
     if (!Files.isRegularFile(jar)) return Optional.empty();
     try (ZipFile archive = new ZipFile(jar.toFile())) {
       var paper = archive.getEntry("plugin.yml");
+      if (paper == null) paper = archive.getEntry("paper-plugin.yml");
       if (paper != null) {
         try (InputStream input = archive.getInputStream(paper)) {
           for (String line : new String(input.readAllBytes(), StandardCharsets.UTF_8).split("\\R")) {
@@ -661,7 +670,11 @@ public final class PluginAutoUpdater {
         map.get("game_version")
     ));
     if (gameVersion.isBlank()) {
-      gameVersion = this.globalMinecraftVersion;
+      if ("velocity".equals(platform) || (targetServers.size() == 1 && targetServers.contains("proxy"))) {
+        gameVersion = "any";
+      } else {
+        gameVersion = this.globalMinecraftVersion;
+      }
     }
 
     String channel = string(firstNonNull(
@@ -752,8 +765,14 @@ public final class PluginAutoUpdater {
 
   private static void validateJar(Path file, String platform) throws IOException {
     try (ZipFile archive = new ZipFile(file.toFile())) {
-      if (archive.getEntry(platform.equals("paper") ? "plugin.yml" : "velocity-plugin.json") == null) {
-        throw new IOException("대상 플랫폼 플러그인 메타데이터가 없는 JAR");
+      if (platform.equals("paper")) {
+        if (archive.getEntry("plugin.yml") == null && archive.getEntry("paper-plugin.yml") == null) {
+          throw new IOException("대상 플랫폼 플러그인 메타데이터(plugin.yml 또는 paper-plugin.yml)가 없는 JAR");
+        }
+      } else if (platform.equals("velocity")) {
+        if (archive.getEntry("velocity-plugin.json") == null) {
+          throw new IOException("대상 플랫폼 플러그인 메타데이터(velocity-plugin.json)가 없는 JAR");
+        }
       }
     }
   }

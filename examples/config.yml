@@ -5,7 +5,8 @@
 
 # 서버 기본 마인크래프트 버전 (고정값)
 # 개별 플러그인 설정에서 minecraft-version을 생략하면 이 버전이 적용됩니다.
-minecraft-version: "1.21.1"
+# 현재 서버 환경: Minecraft 26.2 (Purpur 26.2-2633-HEAD)
+minecraft-version: "26.2"
 
 # ==============================================================================
 # 관리 대상 서버(버킷) 목록 정의
@@ -31,39 +32,109 @@ servers:
 
 # ==============================================================================
 # 자동 업데이트 대상 플러그인 목록
-# [주의] 이 작업 공간에서 직접 빌드하는 자체 플러그인(custom-nickname 등)은 등록하지 마세요.
+# [주의] 이 작업 공간에서 직접 빌드하는 자체 플러그인(custom-nickname 등)이나
+#       업데이터 자신(plugin-auto-updater)은 등록하지 마세요.
+#
+# * target-file 생략 시 각 서버의 plugins/ 폴더에 설치된 기존 파일명을
+#   자동 감지하여 동일한 파일명으로 안전하게 덮어씌웁니다.
 # ==============================================================================
 plugins:
-  # [예시 1] 여러 버킷 서버에 공통 적용 (servers에 목록 지정 또는 all-paper)
-  # target-file 생략 시 각 서버의 plugins/ 폴더에 설치된 기존 파일명을 자동 감지하여 덮어씌웁니다.
+  # ----------------------------------------------------------------------------
+  # [Proxy 서버 플러그인 - Velocity]
+  # ----------------------------------------------------------------------------
+  # TAB (Velocity 프록시 탭리스트 & 네임태그)
+  tab:
+    enabled: true
+    server: proxy
+    source: modrinth
+    project: tab-was-taken
+    channel: release
+
+  # VelocityScoreboardAPI (TAB 및 프록시 스코어보드 패킷 라이브러리)
+  velocityscoreboardapi:
+    enabled: true
+    server: proxy
+    source: modrinth
+    project: velocityscoreboardapi
+    channel: release
+
+  # NexoProxy (Nexo 프록시 애드온)
+  nexoproxy:
+    enabled: true
+    server: proxy
+    source: modrinth
+    project: nexoproxy
+    channel: release
+
+  # ----------------------------------------------------------------------------
+  # [Lobby 버킷 서버 플러그인 - Paper / Purpur]
+  # ----------------------------------------------------------------------------
+  # LuckPerms (전용 공식 메타데이터 API 및 전용 다운로드 서버 사용)
+  # 추후 다른 버킷 서버(survival 등)를 추가하면 servers 목록에 서버명만 추가하면 됩니다.
   luckperms:
     enabled: true
     servers:
       - lobby
       # - survival
-      # - dungeon
-    source: luckperms                      # luckperms 전용 다운로드 API 사용
+    source: luckperms
 
-  # [예시 2] 특정 버킷 서버에만 적용 (server: lobby)
-  # viaversion:
-  #   enabled: true
-  #   server: lobby
-  #   source: modrinth
-  #   project: viaversion
-  #   channel: release                     # release, beta, alpha 중 선택 (기본값: release)
-  #   # minecraft-version: "1.21.1"        # 생략 시 위의 글로벌 minecraft-version 사용
+  # ViaVersion (클라이언트-서버 버전 호환 프로토콜)
+  viaversion:
+    enabled: true
+    server: lobby
+    source: modrinth
+    project: viaversion
+    channel: release
 
-  # [예시 3] 프록시 서버 전용 플러그인 (server: proxy)
-  # tab:
-  #   enabled: true
-  #   server: proxy
-  #   source: modrinth
-  #   project: tab
-  #   channel: release
+  # ViaBackwards (하위 버전 클라이언트 접속 지원)
+  viabackwards:
+    enabled: true
+    server: lobby
+    source: modrinth
+    project: viabackwards
+    channel: release
 
-  # [예시 4] Spigot 버전 확인 예시 (Spigot 공식은 다운로드 API가 없어 알림 로그만 출력)
-  # example-spigot:
-  #   enabled: false
-  #   server: lobby
-  #   source: spigot-check
-  #   project: "12345"                     # SpigotMC 리소스 ID
+  # FancyHolograms (디스플레이 엔티티 기반 홀로그램)
+  fancyholograms:
+    enabled: true
+    server: lobby
+    source: modrinth
+    project: fancyholograms
+    channel: release
+
+  # packetevents (패킷 라이브러리)
+  packetevents:
+    enabled: true
+    server: lobby
+    source: modrinth
+    project: packetevents
+    channel: release
+
+  # Typewriter (대화/퀘스트/텍스트 연출)
+  typewriter:
+    enabled: true
+    server: lobby
+    source: modrinth
+    project: typewriter
+    channel: beta
+
+  # BetterHud (커스텀 HUD UI 시스템)
+  betterhud:
+    enabled: true
+    server: lobby
+    source: modrinth
+    project: betterhud2
+    channel: alpha
+
+  # Citizens (NPC 플러그인 - Spigot 공식 API 버전 확인)
+  citizens:
+    enabled: true
+    server: lobby
+    source: spigot-check
+    project: "13811"
+
+  # ----------------------------------------------------------------------------
+  # [외부 유료/비공개 배포 플러그인 안내]
+  # ----------------------------------------------------------------------------
+  # Nexo: boy0000 제작 상용 리소스(Polymart/BuiltByBit)로 공개 자동 다운로드 API가 없습니다.
+  # CustomNameplates: XiaoMoMi 제작 상용 리소스(Polymart/BuiltByBit)로 공개 자동 다운로드 API가 없습니다.
